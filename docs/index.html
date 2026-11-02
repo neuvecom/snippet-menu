@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SnippetMenu</title>
+<meta name="description" content="クリップボードを使わずに定型文を入力できるmacOSメニューバーアプリ">
+<style>
+:root {
+  --bg: #f6f4ef; --ink: #23211d; --muted: #6b665c; --line: #d9d4c8;
+  --panel: #fffdf9; --accent: #1f6f5c; --accent-ink: #fff; --menu: rgba(255,255,255,.92); --hover: #2f7cf6;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #1b1a18; --ink: #ece9e2; --muted: #a7a196; --line: #3a372f;
+    --panel: #24221f; --accent: #63c7ac; --accent-ink: #10231e; --menu: rgba(52,50,47,.94); --hover: #2f7cf6;
+  }
+}
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0; background: var(--bg); color: var(--ink); line-height: 1.8;
+  font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Yu Gothic", Meiryo, sans-serif;
+}
+.wrap { max-width: 920px; margin: 0 auto; padding: 0 24px; }
+header { padding: 72px 0 56px; }
+.hero { display: grid; grid-template-columns: 1fr 300px; gap: 56px; align-items: center; }
+.name { margin: 0 0 16px; font-size: 15px; font-weight: 700; color: var(--accent); letter-spacing: .04em; }
+h1 { margin: 0 0 20px; font-size: clamp(30px, 5vw, 44px); line-height: 1.35; letter-spacing: .01em; font-weight: 700; }
+.lead { margin: 0 0 28px; color: var(--muted); font-size: 17px; }
+.button {
+  display: inline-block; padding: 11px 22px; border-radius: 8px; background: var(--accent);
+  color: var(--accent-ink); font-weight: 700; text-decoration: none;
+}
+.button:hover { opacity: .9; }
+.req { margin: 12px 0 0; color: var(--muted); font-size: 14px; }
+.menu {
+  border: 1px solid var(--line); border-radius: 10px; padding: 6px; background: var(--menu);
+  box-shadow: 0 16px 40px rgba(0,0,0,.16); font-size: 14px; line-height: 1.5;
+}
+.menu div { padding: 5px 10px; border-radius: 5px; display: flex; justify-content: space-between; }
+.menu .on { background: var(--hover); color: #fff; }
+.menu hr { border: 0; border-top: 1px solid var(--line); margin: 6px 10px; }
+section { padding: 44px 0; border-top: 1px solid var(--line); }
+h2 { margin: 0 0 20px; font-size: 22px; line-height: 1.5; }
+.ways { display: grid; grid-template-columns: repeat(3, 1fr); gap: 28px; margin: 0; }
+.ways dt { font-weight: 700; margin-bottom: 6px; }
+.ways dd { margin: 0; color: var(--muted); font-size: 15px; }
+kbd {
+  font: inherit; font-size: .92em; padding: 1px 6px; border: 1px solid var(--line);
+  border-radius: 5px; background: var(--panel); white-space: nowrap;
+}
+ol { margin: 0; padding-left: 1.4em; }
+li { margin-bottom: 8px; }
+li::marker { color: var(--accent); font-weight: 700; }
+.note { margin: 20px 0 0; color: var(--muted); font-size: 15px; }
+pre {
+  margin: 0; padding: 14px 16px; overflow-x: auto; border: 1px solid var(--line);
+  border-radius: 8px; background: var(--panel); font-size: 14px; line-height: 1.6;
+}
+a { color: var(--accent); }
+footer { padding: 32px 0 56px; border-top: 1px solid var(--line); color: var(--muted); font-size: 14px; }
+@media (max-width: 720px) {
+  .wrap { padding: 0 16px; }
+  header { padding: 48px 0 40px; }
+  .hero { grid-template-columns: 1fr; gap: 36px; }
+  .ways { grid-template-columns: 1fr; gap: 20px; }
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="hero">
+    <div>
+      <p class="name">SnippetMenu</p>
+      <h1>定型文を入れても、<br>コピーした内容は<br>そのまま。</h1>
+      <p class="lead">クリップボードを使わずに定型文を入力できる、macOSのメニューバーアプリです。定型文を入れたあとも、<kbd>⌘V</kbd>で直前にコピーした内容を貼り付けられます。</p>
+      <a class="button" href="https://github.com/neuvecom/snippet-menu/releases/latest/download/SnippetMenu.zip">無料でダウンロード</a>
+      <p class="req">macOS 13以降・MITライセンス</p>
+    </div>
+    <div class="menu" aria-hidden="true">
+      <div>お世話になっております</div>
+      <div class="on">打ち合わせ日程の調整</div>
+      <div>振込先のご案内</div>
+      <div><span>返信テンプレート</span><span>›</span></div>
+      <hr>
+      <div>定型文を編集…</div>
+    </div>
+  </header>
+
+  <section>
+    <h2>3つの開き方</h2>
+    <dl class="ways">
+      <div><dt>メニューバー</dt><dd>アイコンをクリックして定型文を選びます。</dd></div>
+      <div><dt><kbd>⌥</kbd> + 右クリック</dt><dd>マウスの位置にメニューを開きます。通常の右クリックはそのままです。</dd></div>
+      <div><dt><kbd>⌃⌥V</kbd></dt><dd>キーボードからメニューを呼び出せます。</dd></div>
+    </dl>
+    <p class="note">タイトルを「分類/名前」にすると、サブメニューに整理できます。日本語入力がオンのままでも使えます。</p>
+  </section>
+
+  <section>
+    <h2>インストール</h2>
+    <ol>
+      <li>SnippetMenu.zipをダウンロードして展開します。</li>
+      <li><code>SnippetMenu.app</code>を「アプリケーション」フォルダへ移動して開きます。</li>
+      <li>Appleの公証を受けていないため、ブロックされた場合は「システム設定」→「プライバシーとセキュリティ」→「このまま開く」を選びます。</li>
+      <li>「アクセシビリティ」でSnippetMenuを許可します。文字の入力に必要です。</li>
+    </ol>
+  </section>
+
+  <section>
+    <h2>知っておきたいこと</h2>
+    <ol>
+      <li>定型文はMacの中にだけ保存され、外部には送信されません。</li>
+      <li>入力できるのはプレーンテキストのみです。書式や画像には対応していません。</li>
+      <li>直接挿入できないアプリでは、改行を<kbd>Shift+Return</kbd>として送ります。シェルでは行が実行される場合があるため、複数行の定型文に注意してください。</li>
+      <li>動作確認はApple Siliconで行っています。</li>
+    </ol>
+  </section>
+
+  <section>
+    <h2>ソースからビルド</h2>
+    <pre><code>git clone https://github.com/neuvecom/snippet-menu.git
+cd snippet-menu
+./build.sh</code></pre>
+    <p class="note">Xcodeのコマンドラインツールが必要です。</p>
+  </section>
+
+  <footer>
+    <a href="https://github.com/neuvecom/snippet-menu">GitHub</a>
+  </footer>
+</div>
+</body>
+</html>

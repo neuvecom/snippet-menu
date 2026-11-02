@@ -1,0 +1,28 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build universal app
+        run: |
+          APP=build/SnippetMenu.app
+          mkdir -p "$APP/Contents/MacOS"
+          swiftc -O -swift-version 5 -target arm64-apple-macos13 Sources/main.swift -o build/SnippetMenu-arm64
+          swiftc -O -swift-version 5 -target x86_64-apple-macos13 Sources/main.swift -o build/SnippetMenu-x86_64
+          lipo -create build/SnippetMenu-arm64 build/SnippetMenu-x86_64 -output "$APP/Contents/MacOS/SnippetMenu"
+          cp Info.plist "$APP/Contents/Info.plist"
+          codesign --force --sign - "$APP"
+          ditto -c -k --keepParent "$APP" SnippetMenu.zip
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" SnippetMenu.zip --title "$GITHUB_REF_NAME" --generate-notes
