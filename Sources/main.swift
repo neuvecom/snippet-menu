@@ -416,6 +416,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
 
         menu.addItem(.separator())
+        addCommand(menu, "UUIDを入力", #selector(insertUUID))
         addCommand(menu, "定型文を編集…", #selector(openEditor))
         guard includeSettings else { return }
 
@@ -440,8 +441,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     // MARK: Actions
 
+    @objc private func insertUUID() {
+        insertText(newUUID())
+    }
+
     @objc private func pick(_ sender: NSMenuItem) {
         guard let text = sender.representedObject as? String else { return }
+        // {uuid} becomes one fresh UUID per insertion.
+        insertText(text.replacingOccurrences(of: "{uuid}", with: newUUID()))
+    }
+
+    private func newUUID() -> String {
+        UUID().uuidString.lowercased()
+    }
+
+    private func insertText(_ text: String) {
         guard AXIsProcessTrusted() else {
             openAccessibilitySettings()
             return
