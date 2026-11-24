@@ -10,19 +10,80 @@ permissions:
 jobs:
   release:
     runs-on: macos-15
+    env:
+      APP: build/SnippetMenu.app
     steps:
       - uses: actions/checkout@v4
+
       - name: Build universal app
         run: |
-          APP=build/SnippetMenu.app
           mkdir -p "$APP/Contents/MacOS"
           swiftc -O -swift-version 5 -target arm64-apple-macos13 Sources/main.swift -o build/SnippetMenu-arm64
           swiftc -O -swift-version 5 -target x86_64-apple-macos13 Sources/main.swift -o build/SnippetMenu-x86_64
           lipo -create build/SnippetMenu-arm64 build/SnippetMenu-x86_64 -output "$APP/Contents/MacOS/SnippetMenu"
           cp Info.plist "$APP/Contents/Info.plist"
-          codesign --force --sign - "$APP"
-          ditto -c -k --keepParent "$APP" SnippetMenu.zip
+
+      # Uses Developer ID when the secrets are set, and ad-hoc signing otherwise.
+      - name: Sign
+        env:
+          P12_BASE64: ${{ secrets.DEVELOPER_ID_P12_BASE64 }}
+          P12_PASSWORD: ${{ secrets.DEVELOPER_ID_P12_PASSWORD }}
+        run: |
+          if [ -z "$P12_BASE64" ]; then
+            echo "::warning::Developer ID secrets are not set, so the app is signed ad-hoc."
+            codesign --force --sign - "$APP"
+            echo "SIGNING=adhoc" >> "$GITHUB_ENV"
+            exit 0
+          fi
+
+          KEYCHAIN="$RUNNER_TEMP/signing.keychain-db"
+          KEYCHAIN_PASSWORD=$(uuidgen)
+          echo "$P12_BASE64" | base64 --decode > "$RUNNER_TEMP/developer-id.p12"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security import "$RUNNER_TEMP/developer-id.p12" -k "$KEYCHAIN" -P "$P12_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN" >/dev/null
+          security list-keychains -d user -s "$KEYCHAIN" $(security list-keychains -d user | tr -d '"')
+          rm "$RUNNER_TEMP/developer-id.p12"
+
+          IDENTITY=$(security find-identity -v -p codesigning "$KEYCHAIN" | grep -o '"Developer ID Application: [^"]*"' | head -1 | tr -d '"')
+          if [ -z "$IDENTITY" ]; then
+            echo "::error::No Developer ID Application certificate was found in the .p12 file."
+            exit 1
+          fi
+          codesign --force --options runtime --timestamp --sign "$IDENTITY" "$APP"
+          codesign --verify --strict --verbose=2 "$APP"
+          echo "SIGNING=developer-id" >> "$GITHUB_ENV"
+
+      - name: Notarize
+        if: env.SIGNING == 'developer-id'
+        env:
+          NOTARY_KEY_P8_BASE64: ${{ secrets.NOTARY_KEY_P8_BASE64 }}
+          NOTARY_KEY_ID: ${{ secrets.NOTARY_KEY_ID }}
+          NOTARY_ISSUER_ID: ${{ secrets.NOTARY_ISSUER_ID }}
+        run: |
+          KEY="$RUNNER_TEMP/notary.p8"
+          echo "$NOTARY_KEY_P8_BASE64" | base64 --decode > "$KEY"
+          AUTH=(--key "$KEY" --key-id "$NOTARY_KEY_ID" --issuer "$NOTARY_ISSUER_ID")
+
+          ditto -c -k --keepParent "$APP" "$RUNNER_TEMP/notarize.zip"
+          RESULT=$(xcrun notarytool submit "$RUNNER_TEMP/notarize.zip" "${AUTH[@]}" --wait --output-format json)
+          echo "$RESULT"
+          ID=$(echo "$RESULT" | /usr/bin/python3 -c 'import json, sys; print(json.load(sys.stdin)["id"])')
+          STATUS=$(echo "$RESULT" | /usr/bin/python3 -c 'import json, sys; print(json.load(sys.stdin)["status"])')
+          if [ "$STATUS" != "Accepted" ]; then
+            xcrun notarytool log "$ID" "${AUTH[@]}"
+            exit 1
+          fi
+
+          xcrun stapler staple "$APP"
+          spctl --assess --type execute --verbose=2 "$APP"
+          rm "$KEY"
+
       - name: Publish release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "$GITHUB_REF_NAME" SnippetMenu.zip --title "$GITHUB_REF_NAME" --generate-notes
+        run: |
+          ditto -c -k --keepParent "$APP" SnippetMenu.zip
+          gh release create "$GITHUB_REF_NAME" SnippetMenu.zip --title "$GITHUB_REF_NAME" --generate-notes
