@@ -23,8 +23,9 @@
 
 1. [最新版のSnippetMenu.zip](https://github.com/neuvecom/snippet-menu/releases/latest/download/SnippetMenu.zip)をダウンロードして展開します。
 2. `SnippetMenu.app`を「アプリケーション」フォルダへ移動して開きます。
-3. Appleの公証を受けていないため、ブロックされた場合は「システム設定」→「プライバシーとセキュリティ」→「このまま開く」を選びます。
-4. 「アクセシビリティ」でSnippetMenuを許可します。
+3. 「アクセシビリティ」でSnippetMenuを許可します。
+
+配布版はDeveloper IDで署名され、Appleの公証を受けています。
 
 ## ソースからビルド
 
