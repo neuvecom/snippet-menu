@@ -54,6 +54,7 @@ final class SnippetStore: ObservableObject {
 
 enum Inserter {
     static func insert(_ raw: String) {
+        waitForModifierRelease()
         let text = raw.replacingOccurrences(of: "\r\n", with: "\n")
             .replacingOccurrences(of: "\r", with: "\n")
         if insertViaAccessibility(text) { return }
@@ -120,19 +121,30 @@ enum Inserter {
 
     // Fallback for apps without usable accessibility text support.
 
-    private static func typeViaKeyEvents(_ text: String) {
+    // Keys still held from a shortcut such as ⌃⌥1 would change the typed text.
+    private static func waitForModifierRelease() {
+        let held: CGEventFlags = [.maskControl, .maskAlternate, .maskCommand, .maskShift]
+        for _ in 0..<100 {
+            if CGEventSource.flagsState(.combinedSessionState).intersection(held).isEmpty { return }
+            usleep(10_000)
+        }
+    }
+
+    /// Switches to an ASCII keyboard such as 英数 and returns a closure that restores the previous input source.
+    static func selectASCIIInputSource() -> () -> Void {
         let previous = TISCopyCurrentKeyboardInputSource().takeRetainedValue()
         let ascii = TISCopyCurrentASCIICapableKeyboardInputSource().takeRetainedValue()
-        let needsSwitch = sourceID(previous) != sourceID(ascii)
-        if needsSwitch {
-            TISSelectInputSource(ascii)
-            usleep(40_000)
-        }
+        guard sourceID(previous) != sourceID(ascii) else { return {} }
+        TISSelectInputSource(ascii)
+        return { TISSelectInputSource(previous) }
+    }
+
+    private static func typeViaKeyEvents(_ text: String) {
+        let restoreInputSource = selectASCIIInputSource()
+        usleep(40_000)
         defer {
-            if needsSwitch {
-                usleep(60_000)
-                TISSelectInputSource(previous)
-            }
+            usleep(60_000)
+            restoreInputSource()
         }
 
         let source = CGEventSource(stateID: .privateState)
@@ -312,6 +324,13 @@ private func eventTapCallback(
             DispatchQueue.main.async { appDelegate.showPopupMenu() }
             return nil
         }
+    case .keyDown:
+        // Only used while our popup menu is open; every other key passes through untouched.
+        let flags = event.flags
+        let plain = !flags.contains(.maskCommand) && !flags.contains(.maskControl) && !flags.contains(.maskAlternate)
+        if plain && appDelegate.handlePopupKey(event.getIntegerValueField(.keyboardEventKeycode)) {
+            return nil
+        }
     case .rightMouseUp:
         if swallowRightMouseUp {
             swallowRightMouseUp = false
@@ -329,7 +348,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var statusItem: NSStatusItem!
     private var editorWindow: NSWindow?
     private var eventTap: CFMachPort?
-    private var hotKey: EventHotKeyRef?
+    private var hotKeys: [EventHotKeyRef?] = []
+    private var currentPopup: NSMenu?
+    private var popupDigitPick: Int?
     private var tapTimer: Timer?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -367,20 +388,61 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         NSApp.mainMenu = main
     }
 
+    // Shortcut IDs: 1 opens the menu, 2 types a UUID, 11-15 type recent copies 1-5.
     private func registerHotKey() {
         var spec = EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyPressed))
-        InstallEventHandler(GetApplicationEventTarget(), { _, _, _ in
-            DispatchQueue.main.async { appDelegate.showPopupMenu() }
+        InstallEventHandler(GetApplicationEventTarget(), { _, event, _ in
+            var hotKeyID = EventHotKeyID()
+            GetEventParameter(
+                event,
+                EventParamName(kEventParamDirectObject),
+                EventParamType(typeEventHotKeyID),
+                nil,
+                MemoryLayout<EventHotKeyID>.size,
+                nil,
+                &hotKeyID
+            )
+            let id = hotKeyID.id
+            DispatchQueue.main.async { appDelegate.handleHotKey(id) }
             return noErr
         }, 1, &spec, nil, nil)
-        RegisterEventHotKey(
-            UInt32(kVK_ANSI_V),
-            UInt32(controlKey | optionKey),
-            EventHotKeyID(signature: OSType(0x534E_4950), id: 1),
-            GetApplicationEventTarget(),
-            0,
-            &hotKey
-        )
+
+        let digits = [kVK_ANSI_1, kVK_ANSI_2, kVK_ANSI_3, kVK_ANSI_4, kVK_ANSI_5]
+        var keys: [(Int, UInt32)] = [(kVK_ANSI_V, 1), (kVK_ANSI_U, 2)]
+        for (index, key) in digits.enumerated() {
+            keys.append((key, UInt32(11 + index)))
+        }
+        for (key, id) in keys {
+            var ref: EventHotKeyRef?
+            let status = RegisterEventHotKey(
+                UInt32(key),
+                UInt32(controlKey | optionKey),
+                EventHotKeyID(signature: OSType(0x534E_4950), id: id),
+                GetApplicationEventTarget(),
+                0,
+                &ref
+            )
+            if status != noErr { NSLog("SnippetMenu: shortcut \(id) could not be registered (\(status))") }
+            hotKeys.append(ref)
+        }
+    }
+
+    func handleHotKey(_ id: UInt32) {
+        switch id {
+        case 1:
+            showPopupMenu()
+        case 2:
+            insertUUID()
+        case 11...15:
+            let index = Int(id) - 11
+            if index < history.items.count {
+                insertText(history.items[index])
+            } else {
+                NSSound.beep()
+            }
+        default:
+            break
+        }
     }
 
     private func installEventTapWhenTrusted() {
@@ -394,6 +456,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         guard AXIsProcessTrusted() else { return false }
         let mask = (CGEventMask(1) << CGEventType.rightMouseDown.rawValue)
             | (CGEventMask(1) << CGEventType.rightMouseUp.rawValue)
+            | (CGEventMask(1) << CGEventType.keyDown.rawValue)
         guard let tap = CGEvent.tapCreate(
             tap: .cgSessionEventTap,
             place: .headInsertEventTap,
@@ -406,6 +469,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         CFRunLoopAddSource(CFRunLoopGetMain(), source, .commonModes)
         CGEvent.tapEnable(tap: tap, enable: true)
         eventTap = tap
+        return true
+    }
+
+    /// Returns true when the key picked a recent copy and should be swallowed.
+    func handlePopupKey(_ keyCode: Int64) -> Bool {
+        guard let menu = currentPopup else { return false }
+        let digits: [Int64: Int] = [
+            Int64(kVK_ANSI_1): 0, Int64(kVK_ANSI_2): 1, Int64(kVK_ANSI_3): 2,
+            Int64(kVK_ANSI_4): 3, Int64(kVK_ANSI_5): 4,
+        ]
+        guard let index = digits[keyCode] else { return false }
+        popupDigitPick = index
+        menu.cancelTracking()
         return true
     }
 
@@ -422,7 +498,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     func showPopupMenu() {
         let menu = NSMenu()
         fill(menu, includeSettings: false)
+        currentPopup = menu
+        popupDigitPick = nil
         menu.popUp(positioning: nil, at: NSEvent.mouseLocation, in: nil)
+        currentPopup = nil
+        if let index = popupDigitPick {
+            if index < history.items.count {
+                insertText(history.items[index])
+            } else {
+                NSSound.beep()
+            }
+        }
     }
 
     private func fill(_ menu: NSMenu, includeSettings: Bool) {
