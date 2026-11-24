@@ -4,6 +4,10 @@
 
 配布ページ: https://neuvecom.github.io/snippet-menu/
 
+## 更新情報
+
+- 2026-11-24 v1.2.1: UUID入力、コピー履歴、Appleの公証に対応しました（[お知らせ記事](https://note.com/hebodan/n/ndf509160b8cd)）
+
 ## 機能
 
 - メニューバーのアイコンから定型文を入力
